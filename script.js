@@ -4,12 +4,9 @@
   var TZ = 'Australia/Sydney';
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  // Opening sessions per weekday (0 = Sunday), in minutes after midnight.
-  var DINNER = { label: 'dinner', open: 17 * 60 + 30, close: 21 * 60 };
-  function sessionsFor(day) {
-    var list = [{ label: 'cafe', open: day === 0 ? 7 * 60 + 30 : 6 * 60 + 30, close: 15 * 60 }];
-    if (day >= 3 && day <= 6) list.push(DINNER);
-    return list;
+  // Opening hours per weekday (0 = Sunday), in minutes after midnight.
+  function hoursFor(day) {
+    return { open: day === 0 ? 7 * 60 + 30 : 6 * 60 + 30, close: 15 * 60 };
   }
 
   /* ---------- Sydney time helpers ---------- */
@@ -39,18 +36,11 @@
     var el = document.getElementById('today-hours');
     if (!el) return;
     var now = sydneyNow();
-    var today = sessionsFor(now.day);
-    var openNow = today.some(function (s) { return now.minutes >= s.open && now.minutes < s.close; });
-    var last = today[today.length - 1];
-    var text;
-
-    if (now.minutes >= last.close) {
-      var tomorrow = sessionsFor((now.day + 1) % 7)[0];
-      text = 'Closed now · Open tomorrow ' + range(tomorrow);
-    } else {
-      text = 'Open today ' + range(today[0]);
-      if (today[1]) text += ' · Dinner ' + range(today[1]);
-    }
+    var today = hoursFor(now.day);
+    var openNow = now.minutes >= today.open && now.minutes < today.close;
+    var text = now.minutes >= today.close
+      ? 'Closed now · Open tomorrow ' + range(hoursFor((now.day + 1) % 7))
+      : 'Open today ' + range(today);
 
     el.textContent = '';
     var dot = document.createElement('span');
@@ -167,16 +157,17 @@
     });
   }
 
-  function initBooking(todayIso) {
+  function initBooking(now) {
+    var todayIso = now.iso;
     var form = document.getElementById('booking-form');
     if (!form) return;
     var out = document.getElementById('booking-result');
     var dateInput = form.elements.date;
     dateInput.min = todayIso;
 
-    // Default to the next dinner night (Wed–Sat).
+    // Default to the coming Saturday for weekend brunch.
     var d = parseISODate(todayIso);
-    while (d.getDay() < 3) d.setDate(d.getDate() + 1);
+    do { d.setDate(d.getDate() + 1); } while (d.getDay() !== 6);
     dateInput.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
     form.addEventListener('submit', function (e) {
@@ -190,10 +181,11 @@
         out.textContent = 'Please choose a date from today onwards.';
         return;
       }
-      if (date.getDay() < 3) {
-        markInvalid(dateInput, true);
+      var slot = form.elements.time.value.split(':');
+      if (dateInput.value === todayIso && +slot[0] * 60 + +slot[1] <= sydneyNow().minutes) {
+        markInvalid(dateInput, false);
         out.classList.add('is-error');
-        out.textContent = 'Dinner runs Wednesday to Saturday. ' + DAYS[date.getDay()] + ' is breakfast and lunch only.';
+        out.textContent = 'That time has already passed today. Please pick a later time or another day.';
         return;
       }
       markInvalid(dateInput, false);
@@ -201,7 +193,7 @@
       var guests = form.elements.guests.value;
       out.classList.add('is-ok');
       out.textContent = 'Demo only: ' + prettyDate(date) + ' at ' + time + ' for ' + guests +
-        (guests === '1' ? ' guest' : ' guests') + '. A live booking system would confirm this instantly.';
+        (guests === '1' ? ' guest' : ' guests') + '. With a live booking system this table would be confirmed instantly.';
     });
   }
 
@@ -212,6 +204,6 @@
     initBanner();
     initNav();
     initCatering(now.iso);
-    initBooking(now.iso);
+    initBooking(now);
   });
 })();
